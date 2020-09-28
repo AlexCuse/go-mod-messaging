@@ -18,6 +18,7 @@ package messaging
 
 import (
 	"fmt"
+	"github.com/edgexfoundry/go-mod-messaging/internal/pkg/kafka"
 	"strings"
 
 	"github.com/edgexfoundry/go-mod-messaging/internal/pkg/mqtt"
@@ -35,6 +36,9 @@ const (
 
 	// RedisStreams messaging implementation
 	RedisStreams = "redisstreams"
+
+	// Kafka messaging implementation
+	Kafka = "kafka"
 )
 
 // NewMessageClient is a factory function to instantiate different message client depending on
@@ -52,6 +56,8 @@ func NewMessageClient(msgConfig types.MessageBusConfig) (MessageClient, error) {
 		return mqtt.NewMQTTClient(msgConfig)
 	case RedisStreams:
 		return streams.NewClient(msgConfig)
+	case Kafka:
+		return kafka.NewKafkaClient(msgConfig)
 	default:
 		return nil, fmt.Errorf("unknown message type '%s' requested", msgConfig.Type)
 	}
