@@ -42,6 +42,15 @@ func TestNewMessageClientZeroMq(t *testing.T) {
 	}
 }
 
+func TestNewMessageClientKafka(t *testing.T) {
+	msgConfig.Type = Kafka
+	_, err := NewMessageClient(msgConfig)
+
+	if assert.NoError(t, err, "New Message client failed: ", err) == false {
+		t.Fatal()
+	}
+}
+
 func TestNewMessageClientMQTT(t *testing.T) {
 	messageBusConfig := msgConfig
 	messageBusConfig.Type = MQTT
