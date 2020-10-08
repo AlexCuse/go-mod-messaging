@@ -17,8 +17,10 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/edgexfoundry/go-mod-messaging/pkg/types"
 	"strconv"
+	"sync"
 	"time"
 
 	kc "github.com/segmentio/kafka-go"
@@ -38,33 +40,29 @@ type kafkaClient struct {
 	unmarshaler MessageUnmarshaler
 	dialer      *kc.Dialer
 	done        chan struct{}
-	writers     map[string]*kc.Writer
-	readers     map[string]*kc.Reader
+	writers     sync.Map
+	readers     sync.Map
 }
 
-//TODO: mutex around map access
-func (c *kafkaClient) readerFactory(topic string) *kc.Reader {
-	reader, exists := c.readers[topic]
+type readerChannel struct {
+	reader  *kc.Reader
+	channel <-chan kc.Message
+}
+
+func (c *kafkaClient) readerFactory(topic string, errors chan error) readerChannel {
+	cached, exists := c.readers.Load(topic)
 
 	if exists {
-		return reader
+		//store channel ref with this?
+		return cached.(readerChannel)
 	}
 
-	reader = kc.NewReader(kc.ReaderConfig{
+	reader := kc.NewReader(kc.ReaderConfig{
 		Brokers: []string{c.brokerAddress()},
 		Topic:   topic,
 		Dialer:  c.dialer,
 	})
 
-	c.readers[topic] = reader
-	return reader
-}
-
-func (c *kafkaClient) brokerAddress() string {
-	return c.options.PublishHost.Host + ":" + strconv.Itoa(c.options.PublishHost.Port)
-}
-
-func (c *kafkaClient) readerChannelFactory(reader *kc.Reader, errors chan error) <-chan kc.Message {
 	readerChan := make(chan kc.Message)
 
 	//TODO: handle exits
@@ -79,24 +77,33 @@ func (c *kafkaClient) readerChannelFactory(reader *kc.Reader, errors chan error)
 		}
 	}()
 
-	return readerChan
-}
-
-//TODO: mutex around map access
-func (c *kafkaClient) writerFactory(topic string) *kc.Writer {
-	writer, exists := c.writers[topic]
-
-	if exists {
-		return writer
+	result := readerChannel{
+		reader:  reader,
+		channel: readerChan,
 	}
 
-	writer = &kc.Writer{
+	c.readers.Store(topic, result)
+	return result
+}
+
+func (c *kafkaClient) brokerAddress() string {
+	return c.options.PublishHost.Host + ":" + strconv.Itoa(c.options.PublishHost.Port)
+}
+
+func (c *kafkaClient) writerFactory(topic string) *kc.Writer {
+	cached, exists := c.writers.Load(topic)
+
+	if exists {
+		return cached.(*kc.Writer)
+	}
+
+	writer := &kc.Writer{
 		Addr:     kc.TCP(c.brokerAddress()),
 		Topic:    topic,
 		Balancer: &kc.LeastBytes{},
 	}
 
-	c.writers[topic] = writer
+	c.writers.Store(topic, writer)
 	return writer
 }
 
@@ -111,8 +118,8 @@ func NewKafkaClient(options types.MessageBusConfig) (*kafkaClient, error) {
 			DualStack: true,
 		},
 		done:    make(chan struct{}),
-		readers: make(map[string]*kc.Reader),
-		writers: make(map[string]*kc.Writer),
+		readers: sync.Map{},
+		writers: sync.Map{},
 	}, nil
 }
 
@@ -155,8 +162,7 @@ func (mc *kafkaClient) Publish(message types.MessageEnvelope, topic string) erro
 // Subscribe creates a subscription for the specified topics.
 func (mc *kafkaClient) Subscribe(topics []types.TopicChannel, messageErrors chan error) error {
 	for _, topic := range topics {
-		r := mc.readerFactory(topic.Topic)
-		rc := mc.readerChannelFactory(r, messageErrors)
+		r := mc.readerFactory(topic.Topic, messageErrors)
 
 		go func(r *kc.Reader, input <-chan kc.Message, output chan<- types.MessageEnvelope) {
 			for {
@@ -177,23 +183,36 @@ func (mc *kafkaClient) Subscribe(topics []types.TopicChannel, messageErrors chan
 					return
 				}
 			}
-		}(r, rc, topic.Messages)
+		}(r.reader, r.channel, topic.Messages)
 	}
 
 	return nil
+}
+
+type closer interface {
+	Close() error
+}
+
+func disconnect(k interface{}, val interface{}) bool {
+	ready, ok := val.(closer)
+
+	if ok {
+		err := ready.Close()
+		//TODO: handle
+		if err != nil {
+			fmt.Println(fmt.Sprintf("Error closing reader: %+v", err))
+		}
+	}
+
+	return ok
 }
 
 // Disconnect closes the connection to the connected Kafka server.
 func (mc *kafkaClient) Disconnect() error {
 	close(mc.done)
 
-	//TODO: handle close errors
-	for _, x := range mc.writers {
-		x.Close()
-	}
-	for _, x := range mc.readers {
-		x.Close()
-	}
+	mc.writers.Range(disconnect)
+	mc.readers.Range(disconnect)
 
 	return nil
 }
