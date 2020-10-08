@@ -5,7 +5,7 @@ require (
 	github.com/go-redis/redis/v7 v7.2.0
 	github.com/pebbe/zmq4 v1.0.0
 	github.com/segmentio/kafka-go v0.4.5
-	github.com/stretchr/testify v1.3.0
+	github.com/stretchr/testify v1.6.1
 	golang.org/x/net v0.0.0-20191209160850-c0dbc17a3553 // indirect
 )
 
