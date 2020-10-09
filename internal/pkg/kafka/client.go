@@ -63,6 +63,8 @@ func (c *kafkaClient) readerFactory(topic string, errors chan error) readerChann
 		Dialer:  c.dialer,
 	})
 
+	reader.SetOffset(kc.LastOffset)
+
 	readerChan := make(chan kc.Message)
 
 	//TODO: handle exits
