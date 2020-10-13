@@ -53,7 +53,6 @@ func (c *kafkaClient) readerFactory(topic string, errors chan error) readerChann
 	cached, exists := c.readers.Load(topic)
 
 	if exists {
-		//store channel ref with this?
 		return cached.(readerChannel)
 	}
 
@@ -63,7 +62,15 @@ func (c *kafkaClient) readerFactory(topic string, errors chan error) readerChann
 		Dialer:  c.dialer,
 	})
 
-	reader.SetOffset(kc.LastOffset)
+	if val, found := c.options.Optional["StartOffset"]; found {
+		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
+			panic(err)
+		} else {
+			reader.SetOffset(i)
+		}
+	} else {
+		reader.SetOffset(kc.LastOffset)
+	}
 
 	readerChan := make(chan kc.Message)
 
