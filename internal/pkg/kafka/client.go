@@ -26,11 +26,19 @@ import (
 	kc "github.com/segmentio/kafka-go"
 )
 
-// MessageMarshaler defines the function signature for marshaling structs into []byte.
+// MessageMarshaler defines the function signature for marshaling structs into []byte.  Prior to final marshaling payload should be placed in a MessageEnvelope
 type MessageMarshaler func(v interface{}) ([]byte, error)
 
-// MessageUnmarshaler defines the function signature for unmarshaling []byte into structs.
-type MessageUnmarshaler func(data []byte, v interface{}) error
+func DefaultMessageMarshaler(v interface{}) ([]byte, error) {
+	return json.Marshal(v)
+}
+
+// MessageUnmarshaler defines the function signature for unmarshaling []byte into a message envelope for bus.
+type MessageUnmarshaler func(data []byte, target *types.MessageEnvelope) error
+
+func DefaultMessageUnmarshaler(data []byte, target *types.MessageEnvelope) error {
+	return json.Unmarshal(data, target)
+}
 
 // Client facilitates communication to an Kafka server and provides functionality needed to send and receive Kafka
 // messages.
@@ -120,8 +128,8 @@ func (c *kafkaClient) writerFactory(topic string) *kc.Writer {
 func NewKafkaClient(options types.MessageBusConfig) (*kafkaClient, error) {
 	return &kafkaClient{
 		options:     options,
-		marshaler:   json.Marshal,
-		unmarshaler: json.Unmarshal,
+		marshaler:   DefaultMessageMarshaler,
+		unmarshaler: DefaultMessageUnmarshaler,
 		dialer: &kc.Dialer{
 			Timeout:   10 * time.Second,
 			DualStack: true,
@@ -130,6 +138,31 @@ func NewKafkaClient(options types.MessageBusConfig) (*kafkaClient, error) {
 		readers: sync.Map{},
 		writers: sync.Map{},
 	}, nil
+}
+
+// Options for customizing client behavior
+type KafkaClientOptions struct {
+	Marshaler   MessageMarshaler
+	Unmarshaler MessageUnmarshaler
+}
+
+// NewKafkaClient constructs a new Kafka kafkaClient based on the options provided.
+func NewKafkaClientWithAdapter(messageBusConfig types.MessageBusConfig, options KafkaClientOptions) (*kafkaClient, error) {
+	ct, err := NewKafkaClient(messageBusConfig)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if options.Marshaler != nil {
+		ct.marshaler = options.Marshaler
+	}
+
+	if options.Unmarshaler != nil {
+		ct.unmarshaler = options.Unmarshaler
+	}
+
+	return ct, err
 }
 
 // Connect establishes a connection to a Kafka server.
