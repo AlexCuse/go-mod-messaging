@@ -64,19 +64,40 @@ func (c *kafkaClient) readerFactory(topic string, errors chan error) readerChann
 		return cached.(readerChannel)
 	}
 
-	reader := kc.NewReader(kc.ReaderConfig{
+	readerConfig := kc.ReaderConfig{
 		Brokers: []string{c.brokerAddress()},
 		Topic:   topic,
 		Dialer:  c.dialer,
-	})
+	}
 
-	if val, found := c.options.Optional["StartOffset"]; found {
+	if group := c.options.Optional["ConsumerGroupID"]; len(group) > 0 {
+		readerConfig.GroupID = group
+		if part := c.options.Optional["PartitionID"]; len(part) > 0 {
+			if partition, err := strconv.Atoi(part); err != nil {
+				panic(err)
+			} else {
+				readerConfig.Partition = partition
+			}
+		}
+	}
+
+	if ci := c.options.Optional["CommitInterval"]; len(ci) > 0 {
+		if commitInterval, err := time.ParseDuration(ci); err != nil {
+			panic(err)
+		} else {
+			readerConfig.CommitInterval = commitInterval
+		}
+	}
+
+	reader := kc.NewReader(readerConfig)
+
+	if val := c.options.Optional["StartOffset"]; len(val) > 0 {
 		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
 			panic(err)
 		} else {
 			reader.SetOffset(i)
 		}
-	} else {
+	} else if readerConfig.GroupID != "" {
 		reader.SetOffset(kc.LastOffset)
 	}
 
@@ -126,7 +147,7 @@ func (c *kafkaClient) writerFactory(topic string) *kc.Writer {
 
 // NewKafkaClient constructs a new Kafka kafkaClient based on the options provided.
 func NewKafkaClient(options types.MessageBusConfig) (*kafkaClient, error) {
-	return &kafkaClient{
+	kc := kafkaClient{
 		options:     options,
 		marshaler:   DefaultMessageMarshaler,
 		unmarshaler: DefaultMessageUnmarshaler,
@@ -137,7 +158,12 @@ func NewKafkaClient(options types.MessageBusConfig) (*kafkaClient, error) {
 		done:    make(chan struct{}),
 		readers: sync.Map{},
 		writers: sync.Map{},
-	}, nil
+	}
+
+	if clientId := options.Optional["ClientID"]; len(clientId) > 0 {
+		kc.dialer.ClientID = clientId
+	}
+	return &kc, nil
 }
 
 // Options for customizing client behavior
