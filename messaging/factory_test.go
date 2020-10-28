@@ -17,6 +17,7 @@
 package messaging
 
 import (
+	"context"
 	"testing"
 
 	"github.com/edgexfoundry/go-mod-messaging/pkg/types"
@@ -35,7 +36,7 @@ var msgConfig = types.MessageBusConfig{
 func TestNewMessageClientZeroMq(t *testing.T) {
 
 	msgConfig.Type = ZeroMQ
-	_, err := NewMessageClient(msgConfig)
+	_, err := NewMessageClient(context.TODO(), msgConfig)
 
 	if assert.NoError(t, err, "New Message client failed: ", err) == false {
 		t.Fatal()
@@ -44,7 +45,7 @@ func TestNewMessageClientZeroMq(t *testing.T) {
 
 func TestNewMessageClientKafka(t *testing.T) {
 	msgConfig.Type = Kafka
-	_, err := NewMessageClient(msgConfig)
+	_, err := NewMessageClient(context.TODO(), msgConfig)
 
 	if assert.NoError(t, err, "New Message client failed: ", err) == false {
 		t.Fatal()
@@ -65,7 +66,7 @@ func TestNewMessageClientMQTT(t *testing.T) {
 		"ConnectionPayload": "TestConnectionPayload",
 	}
 
-	_, err := NewMessageClient(messageBusConfig)
+	_, err := NewMessageClient(context.TODO(), messageBusConfig)
 
 	if assert.NoError(t, err, "New Message client failed: ", err) == false {
 		t.Fatal()
@@ -76,7 +77,7 @@ func TestNewMessageBogusType(t *testing.T) {
 
 	msgConfig.Type = "bogus"
 
-	_, err := NewMessageClient(msgConfig)
+	_, err := NewMessageClient(context.TODO(), msgConfig)
 	if assert.Error(t, err, "Expected message type error") == false {
 		t.Fatal()
 	}
@@ -86,7 +87,7 @@ func TestNewMessageEmptyHostAndPortNumber(t *testing.T) {
 
 	msgConfig.PublishHost.Host = ""
 	msgConfig.PublishHost.Port = 0
-	_, err := NewMessageClient(msgConfig)
+	_, err := NewMessageClient(context.TODO(), msgConfig)
 	if assert.Error(t, err, "Expected message type error") == false {
 		t.Fatal()
 	}

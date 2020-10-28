@@ -51,6 +51,7 @@ type kafkaClient struct {
 	done        chan struct{}
 	writers     sync.Map
 	readers     sync.Map
+	context     context.Context
 }
 
 type readerChannel struct {
@@ -104,17 +105,21 @@ func (c *kafkaClient) readerFactory(topic string, errors chan error) readerChann
 
 	readerChan := make(chan kc.Message)
 
-	//TODO: handle exits
-	go func() {
+	go func(ctx context.Context) {
 		for {
-			msg, err := reader.ReadMessage(context.Background())
-			if err != nil {
-				errors <- err
-			} else {
-				readerChan <- msg
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				msg, err := reader.ReadMessage(ctx)
+				if err != nil {
+					errors <- err
+				} else {
+					readerChan <- msg
+				}
 			}
 		}
-	}()
+	}(c.context)
 
 	result := readerChannel{
 		reader:  reader,
@@ -161,7 +166,7 @@ func (c *kafkaClient) writerFactory(topic string) *kc.Writer {
 }
 
 // NewKafkaClient constructs a new Kafka kafkaClient based on the options provided.
-func NewKafkaClient(options types.MessageBusConfig) (*kafkaClient, error) {
+func NewKafkaClient(ctx context.Context, options types.MessageBusConfig) (*kafkaClient, error) {
 	kc := kafkaClient{
 		options:     options,
 		marshaler:   DefaultMessageMarshaler,
@@ -173,6 +178,7 @@ func NewKafkaClient(options types.MessageBusConfig) (*kafkaClient, error) {
 		done:    make(chan struct{}),
 		readers: sync.Map{},
 		writers: sync.Map{},
+		context: ctx,
 	}
 
 	if clientId := options.Optional["ClientID"]; len(clientId) > 0 {
@@ -188,8 +194,8 @@ type KafkaClientOptions struct {
 }
 
 // NewKafkaClient constructs a new Kafka kafkaClient based on the options provided.
-func NewKafkaClientWithAdapter(messageBusConfig types.MessageBusConfig, options KafkaClientOptions) (*kafkaClient, error) {
-	ct, err := NewKafkaClient(messageBusConfig)
+func NewKafkaClientWithAdapter(ctx context.Context, messageBusConfig types.MessageBusConfig, options KafkaClientOptions) (*kafkaClient, error) {
+	ct, err := NewKafkaClient(ctx, messageBusConfig)
 
 	if err != nil {
 		return nil, err
@@ -227,7 +233,7 @@ func (mc *kafkaClient) Publish(message types.MessageEnvelope, topic string) erro
 		return NewOperationErr(PublishOperation, err.Error())
 	}
 
-	err = writer.WriteMessages(context.Background(), kc.Message{
+	err = writer.WriteMessages(mc.context, kc.Message{
 		Key:   []byte(message.CorrelationID),
 		Value: marshaledMessage,
 	})
@@ -247,10 +253,14 @@ func (mc *kafkaClient) Subscribe(topics []types.TopicChannel, messageErrors chan
 	for _, topic := range topics {
 		r := mc.readerFactory(topic.Topic, messageErrors)
 
-		go func(r *kc.Reader, input <-chan kc.Message, output chan<- types.MessageEnvelope) {
+		go func(ctx context.Context, rc readerChannel, output chan<- types.MessageEnvelope) {
 			for {
 				select {
-				case msg := <-input:
+				case <-ctx.Done():
+					return
+				case <-mc.done:
+					return
+				case msg := <-rc.channel:
 					formattedMessage := types.MessageEnvelope{}
 
 					err := mc.unmarshaler(msg.Value, &formattedMessage)
@@ -260,13 +270,15 @@ func (mc *kafkaClient) Subscribe(topics []types.TopicChannel, messageErrors chan
 					} else {
 						output <- formattedMessage
 					}
-					//TODO: retry config
-					r.CommitMessages(context.Background(), msg)
-				case <-mc.done:
-					return
+
+					err = rc.reader.CommitMessages(ctx, msg)
+
+					if err != nil {
+						messageErrors <- err
+					}
 				}
 			}
-		}(r.reader, r.channel, topic.Messages)
+		}(mc.context, r, topic.Messages)
 	}
 
 	return nil

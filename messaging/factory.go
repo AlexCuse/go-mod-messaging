@@ -17,6 +17,7 @@
 package messaging
 
 import (
+	"context"
 	"fmt"
 	"github.com/edgexfoundry/go-mod-messaging/internal/pkg/kafka"
 	"strings"
@@ -43,7 +44,7 @@ const (
 
 // NewMessageClient is a factory function to instantiate different message client depending on
 // the "Type" from the configuration
-func NewMessageClient(msgConfig types.MessageBusConfig) (MessageClient, error) {
+func NewMessageClient(ctx context.Context, msgConfig types.MessageBusConfig) (MessageClient, error) {
 
 	if msgConfig.PublishHost.IsHostInfoEmpty() && msgConfig.SubscribeHost.IsHostInfoEmpty() {
 		return nil, fmt.Errorf("unable to create messageClient: host info not set")
@@ -57,7 +58,7 @@ func NewMessageClient(msgConfig types.MessageBusConfig) (MessageClient, error) {
 	case RedisStreams:
 		return streams.NewClient(msgConfig)
 	case Kafka:
-		return kafka.NewKafkaClient(msgConfig)
+		return kafka.NewKafkaClient(ctx, msgConfig)
 	default:
 		return nil, fmt.Errorf("unknown message type '%s' requested", msgConfig.Type)
 	}
