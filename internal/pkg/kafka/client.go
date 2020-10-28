@@ -271,10 +271,12 @@ func (mc *kafkaClient) Subscribe(topics []types.TopicChannel, messageErrors chan
 						output <- formattedMessage
 					}
 
-					err = rc.reader.CommitMessages(ctx, msg)
+					if rc.reader.Config().GroupID != "" {
+						err = rc.reader.CommitMessages(ctx, msg)
 
-					if err != nil {
-						messageErrors <- err
+						if err != nil {
+							messageErrors <- err
+						}
 					}
 				}
 			}
