@@ -48,10 +48,10 @@ type kafkaClient struct {
 	marshaler   MessageMarshaler
 	unmarshaler MessageUnmarshaler
 	dialer      *kc.Dialer
-	done        chan struct{}
 	writers     sync.Map
 	readers     sync.Map
 	context     context.Context
+	close       context.CancelFunc
 }
 
 type readerChannel struct {
@@ -167,6 +167,8 @@ func (c *kafkaClient) writerFactory(topic string) *kc.Writer {
 
 // NewKafkaClient constructs a new Kafka kafkaClient based on the options provided.
 func NewKafkaClient(ctx context.Context, options types.MessageBusConfig) (*kafkaClient, error) {
+	context, cancel := context.WithCancel(ctx)
+
 	kc := kafkaClient{
 		options:     options,
 		marshaler:   DefaultMessageMarshaler,
@@ -175,10 +177,10 @@ func NewKafkaClient(ctx context.Context, options types.MessageBusConfig) (*kafka
 			Timeout:   10 * time.Second,
 			DualStack: true,
 		},
-		done:    make(chan struct{}),
 		readers: sync.Map{},
 		writers: sync.Map{},
-		context: ctx,
+		context: context,
+		close:   cancel,
 	}
 
 	if clientId := options.Optional["ClientID"]; len(clientId) > 0 {
@@ -258,8 +260,6 @@ func (mc *kafkaClient) Subscribe(topics []types.TopicChannel, messageErrors chan
 				select {
 				case <-ctx.Done():
 					return
-				case <-mc.done:
-					return
 				case msg := <-rc.channel:
 					formattedMessage := types.MessageEnvelope{}
 
@@ -306,7 +306,7 @@ func disconnect(k interface{}, val interface{}) bool {
 
 // Disconnect closes the connection to the connected Kafka server.
 func (mc *kafkaClient) Disconnect() error {
-	close(mc.done)
+	mc.close()
 
 	mc.writers.Range(disconnect)
 	mc.readers.Range(disconnect)
