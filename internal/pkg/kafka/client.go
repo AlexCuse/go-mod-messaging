@@ -93,14 +93,16 @@ func (c *kafkaClient) readerFactory(topic string, errors chan error) readerChann
 
 	reader := kc.NewReader(readerConfig)
 
-	if val := c.options.Optional["StartOffset"]; len(val) > 0 {
-		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
-			panic(err)
+	if readerConfig.GroupID == "" {
+		if val := c.options.Optional["StartOffset"]; len(val) > 0 {
+			if i, err := strconv.ParseInt(val, 10, 64); err == nil {
+				panic(err)
+			} else {
+				reader.SetOffset(i)
+			}
 		} else {
-			reader.SetOffset(i)
+			reader.SetOffset(kc.LastOffset)
 		}
-	} else if readerConfig.GroupID != "" {
-		reader.SetOffset(kc.LastOffset)
 	}
 
 	readerChan := make(chan kc.Message)
