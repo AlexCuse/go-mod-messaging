@@ -17,6 +17,7 @@
 package messaging
 
 import (
+	"github.com/stretchr/testify/require"
 	"testing"
 
 	"github.com/edgexfoundry/go-mod-messaging/v2/pkg/types"
@@ -32,14 +33,39 @@ var msgConfig = types.MessageBusConfig{
 	},
 }
 
-func TestNewMessageClientZeroMq(t *testing.T) {
+func TestRegisterCustomClientFactory_MissingName(t *testing.T) {
+	err := RegisterCustomClientFactory("", nil)
 
+	require.Error(t, err)
+	assert.Equal(t, "name is required to register a custom factory", err.Error())
+}
+
+func TestRegisterCustomClientFactory_BuiltInType(t *testing.T) {
+	err := RegisterCustomClientFactory("mqtt", nil)
+
+	require.Error(t, err)
+	assert.Equal(t, "cannot register custom factory for built in type 'mqtt'", err.Error())
+}
+
+func TestNewMessageClientZeroMq(t *testing.T) {
 	msgConfig.Type = ZeroMQ
 	_, err := NewMessageClient(msgConfig)
 
-	if assert.NoError(t, err, "New Message client failed: ", err) == false {
-		t.Fatal()
-	}
+	require.NoError(t, err, "New Message client failed: ", err)
+}
+
+func TestNewMessageClientCustom(t *testing.T) {
+	msgConfig.Type = "custom"
+
+	err := RegisterCustomClientFactory("custom", func(config types.MessageBusConfig) (MessageClient, error) {
+		return nil, nil
+	})
+
+	require.NoError(t, err)
+
+	_, err = NewMessageClient(msgConfig)
+
+	require.NoError(t, err)
 }
 
 func TestNewMessageClientMQTT(t *testing.T) {
@@ -58,28 +84,19 @@ func TestNewMessageClientMQTT(t *testing.T) {
 
 	_, err := NewMessageClient(messageBusConfig)
 
-	if assert.NoError(t, err, "New Message client failed: ", err) == false {
-		t.Fatal()
-	}
+	require.NoError(t, err, "New Message client failed: ", err)
 }
 
 func TestNewMessageBogusType(t *testing.T) {
-
 	msgConfig.Type = "bogus"
 
 	_, err := NewMessageClient(msgConfig)
-	if assert.Error(t, err, "Expected message type error") == false {
-		t.Fatal()
-	}
+	require.Error(t, err, "Expected message type error")
 }
 
 func TestNewMessageEmptyHostAndPortNumber(t *testing.T) {
-
 	msgConfig.PublishHost.Host = ""
 	msgConfig.PublishHost.Port = 0
 	_, err := NewMessageClient(msgConfig)
-	if assert.Error(t, err, "Expected message type error") == false {
-		t.Fatal()
-	}
-
+	require.Error(t, err, "Expected message type error")
 }

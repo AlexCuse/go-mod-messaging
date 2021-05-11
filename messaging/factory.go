@@ -37,6 +37,24 @@ const (
 	Redis = "redis"
 )
 
+var customClientFactories = make(map[string]func(config types.MessageBusConfig) (MessageClient, error))
+
+// RegisterCustomClientFactory allows registering a custom client with the factory for use elsewhere
+// eg app sdk MessageBus trigger
+func RegisterCustomClientFactory(name string, builder func(config types.MessageBusConfig) (MessageClient, error)) error {
+	if name == "" {
+		return fmt.Errorf("name is required to register a custom factory")
+	}
+
+	if name == MQTT || name == Redis {
+		return fmt.Errorf("cannot register custom factory for built in type '%s'", name)
+	}
+
+	customClientFactories[name] = builder
+
+	return nil
+}
+
 // NewMessageClient is a factory function to instantiate different message client depending on
 // the "Type" from the configuration
 func NewMessageClient(msgConfig types.MessageBusConfig) (MessageClient, error) {
@@ -53,6 +71,9 @@ func NewMessageClient(msgConfig types.MessageBusConfig) (MessageClient, error) {
 	case Redis:
 		return redis.NewClient(msgConfig)
 	default:
+		if builder, found := customClientFactories[lowerMsgType]; found {
+			return builder(msgConfig)
+		}
 		return nil, fmt.Errorf("unknown message type '%s' requested", msgConfig.Type)
 	}
 }
