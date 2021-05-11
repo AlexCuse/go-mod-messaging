@@ -47,13 +47,6 @@ func TestRegisterCustomClientFactory_BuiltInType(t *testing.T) {
 	assert.Equal(t, "cannot register custom factory for built in type 'mqtt'", err.Error())
 }
 
-func TestNewMessageClientZeroMq(t *testing.T) {
-	msgConfig.Type = ZeroMQ
-	_, err := NewMessageClient(msgConfig)
-
-	require.NoError(t, err, "New Message client failed: ", err)
-}
-
 func TestNewMessageClientCustom(t *testing.T) {
 	msgConfig.Type = "custom"
 
